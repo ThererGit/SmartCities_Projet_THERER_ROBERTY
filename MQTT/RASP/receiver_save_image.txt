@@ -1,0 +1,42 @@
+import os
+import time
+from datetime import datetime
+import paho.mqtt.client as mqtt
+
+# pour lancer kil faut Ãªtre sur le Desktop
+#puis faire : python3 receiver_save_image.py
+#attention Ã  bien changer mon ip des deux cÃ´tÃ©
+
+BROKER_IP   = "192.168.2.39"  
+BROKER_PORT = 1883
+TOPIC_IMAGE = "nichoir/image"
+
+# Dossier oÃ¹ sauvegarder les images
+SAVE_DIR = "images_reÃ§ues"
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+def on_connect(client, userdata, flags, rc):
+    print("ConnectÃ© au broker avec le code de retour", rc)
+    client.subscribe(TOPIC_IMAGE)
+    print(f"AbonnÃ© au topic : {TOPIC_IMAGE}")
+
+def on_message(client, userdata, msg):
+    if msg.topic == TOPIC_IMAGE:
+        # Nom de fichier basÃ© sur la date/heure
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"image_{timestamp}.jpg"
+        filepath = os.path.join(SAVE_DIR, filename)
+
+        with open(filepath, "wb") as f:
+            f.write(msg.payload)
+
+        print(f"[{timestamp}] Image reÃ§ue et sauvegardÃ©e sous : {filepath}")
+    else:
+        print(f"Message sur {msg.topic}: {msg.payload[:30]}...")
+
+client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
+
+client.connect(BROKER_IP, BROKER_PORT, keepalive=60)
+client.loop_forever()
