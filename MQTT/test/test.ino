@@ -7,10 +7,13 @@
 
 
 // ------------ CONFIG WIFI / MQTT ------------
-const char* WIFI_SSID     = "electroProjectWifi";
-const char* WIFI_PASSWORD = "B1MesureEnv";
+const char* WIFI_SSID     = "Proximus-Home-2320";
+const char* WIFI_PASSWORD = "wzz4jhzedhue7";
 
-const char* MQTT_SERVER   = "192.168.2.39";  // IP du Pi
+// const char* WIFI_SSID     = "electroProjectWifi";
+// const char* WIFI_PASSWORD = "B1MesureEnv";
+
+const char* MQTT_SERVER   = "192.168.1.15";  // IP du Pi
 const uint16_t MQTT_PORT  = 1883;
 
 const char* TOPIC_IMAGE   = "nichoir/image";
@@ -87,19 +90,19 @@ void setup() {
 
   setupWiFi();
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
-  mqttClient.setBufferSize0);   // par ex. 20 kB, > 14491
-  mqttClient.setBufferSizec0);   // par ex. 20 kB, > 14491
 
+  // IMPORTANT : augmenter le buffer MQTT pour accepter une image JPEG
+  mqttClient.setBufferSize(50000);   // à ajuster en fonction de fb->len
 
   // Init caméra
   Serial.println("Init caméra...");
   if (!Camera.begin(FRAMESIZE_SVGA, PIXFORMAT_JPEG, 1, 12)) {
-    // Astuce : FRAMESIZE_SVGA ou XGA donne des images plus petites que UXGA
     Serial.println("Camera Init Fail");
     while (true) { delay(1000); }
   }
   Serial.println("Camera Init Success");
 }
+
 
 // ------------ LOOP ------------
 unsigned long lastCapture = 0;
