@@ -49,3 +49,19 @@ Pour lancer le code receiver_save_image.py :
 -1 il faut aller sur mon Desktop (où j'ai mis le fichier)
 -2 entrer la commande: python3 receiver_save_image.py
 -3 Si ca compile jje vois dans le terminal où ca s'enregistre 
+
+
+------------------------------------------
+POUR LE SERVEUR WEB
+-----------------------------------------
+
+cd Desktop/galerie_nichoir
+
+source env_nichoir/bin/activate
+
+python app.py
+
+-------------------------------------------------
+
+
+
