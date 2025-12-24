@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galerie du Nichoir</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }
+        h1 { text-align: center; color: #333; }
+        
+        /* Grille des photos */
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+
+        /* Carte pour chaque photo */
+        .photo-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+        .photo-card:hover { transform: translateY(-5px); }
+
+        /* L'image elle-même */
+        .photo-card img {
+            width: 100%;
+            height: 250px;
+            object-fit: cover; /* Recadre l'image proprement sans déformer */
+        }
+
+        /* Les infos (date, batterie) */
+        .info { padding: 15px; }
+        .date { font-weight: bold; color: #555; }
+        .details { color: #777; font-size: 0.9em; margin-top: 5px; }
+        .badge { 
+            display: inline-block; 
+            padding: 3px 8px; 
+            border-radius: 12px; 
+            background-color: #e0e0e0; 
+            font-size: 0.8em;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🐦 Galerie du Nichoir</h1>
+
+    <div class="gallery">
+        {% for photo in photos %}
+        <div class="photo-card">
+            <img src="{{ url_for('get_image', image_id=photo.id) }}" alt="Photo du nichoir">
+            
+            <div class="info">
+                <div class="date">{{ photo.date_capture }}</div>
+                <div class="details">
+                    {% if photo.niveau_batterie %}
+                        <span class="badge">🔋 {{ photo.niveau_batterie }}%</span>
+                    {% else %}
+                        <span class="badge">🔋 N/A</span>
+                    {% endif %}
+                    
+                    {% if photo.commentaire %}
+                        <p>📝 {{ photo.commentaire }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+</body>
+</html>
