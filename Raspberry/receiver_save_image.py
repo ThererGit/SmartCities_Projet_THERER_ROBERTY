@@ -6,13 +6,6 @@ import mariadb
 from datetime import datetime
 import paho.mqtt.client as mqtt
 
-# -------------------------------------------------------------------
-# Pour lancer :
-#   - mettre le bon Broker_ip (celui du rasp)
-#   - se placer sur le Desktop (ou pas, peu importe maintenant)
-#   - python3 receiver_save_image.py
-# -------------------------------------------------------------------
-
 # -----------------------------
 # CONFIG MQTT
 # -----------------------------
@@ -23,7 +16,6 @@ TOPIC_IMAGE = "nichoir/image"
 # -----------------------------
 # CONFIG DOSSIER IMAGES
 # -----------------------------
-# Dossier images sur ton Desktop, quel que soit ton user Linux
 HOME_DIR = os.path.expanduser("~")
 SAVE_DIR = os.path.join(HOME_DIR, "Desktop", "images_reçues")
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -39,21 +31,58 @@ DB_CONFIG = {
     "port": 3306
 }
 
-def insert_image_record(chemin_fichier, niveau_batterie=None, commentaire=None):
+# -----------------------------
+# FONCTION DE NETTOYAGE (SYNC)
+# -----------------------------
+def sync_database_with_folder():
     """
-    Insère une nouvelle ligne dans la table 'images' de la base 'nichoir'.
-
-    champs : chemin_fichier (str), date_capture (now), niveau_batterie (int ou None),
-             commentaire (str ou None)
+    Vérifie au démarrage si les fichiers en base existent vraiment sur le disque.
+    Si un fichier a été supprimé manuellement, on le retire de la base.
     """
+    print("--- 🧹 Vérification de l'intégrité de la base de données ---")
     try:
-        conn = mariadb.connect(
-            user=DB_CONFIG["user"],
-            password=DB_CONFIG["password"],
-            host=DB_CONFIG["host"],
-            port=DB_CONFIG["port"],
-            database=DB_CONFIG["database"]
-        )
+        conn = mariadb.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+
+        # 1. On récupère toutes les entrées
+        cursor.execute("SELECT id, chemin_fichier FROM images")
+        rows = cursor.fetchall()
+        
+        deleted_count = 0
+
+        # 2. On boucle sur chaque ligne pour vérifier le fichier
+        for row in rows:
+            image_id = row[0]
+            chemin = row[1]
+
+            if not os.path.exists(chemin):
+                # Le fichier n'existe plus sur le disque !
+                print(f"   ⚠️ Fichier introuvable : {chemin}")
+                print(f"      -> Suppression de l'entrée ID {image_id}...")
+                
+                # Suppression dans la BDD
+                cursor.execute("DELETE FROM images WHERE id = ?", (image_id,))
+                deleted_count += 1
+        
+        # 3. On valide les suppressions
+        if deleted_count > 0:
+            conn.commit()
+            print(f"✅ Nettoyage terminé : {deleted_count} images supprimées de la base.")
+        else:
+            print("✅ Tout est en ordre : La base correspond aux fichiers.")
+
+        cursor.close()
+        conn.close()
+
+    except mariadb.Error as e:
+        print("❌ ERREUR lors de la synchronisation BDD :", e)
+    print("----------------------------------------------------------")
+
+
+def insert_image_record(chemin_fichier, niveau_batterie=None, commentaire=None):
+    """ Insère une nouvelle ligne dans la table 'images'. """
+    try:
+        conn = mariadb.connect(**DB_CONFIG)
         cursor = conn.cursor()
 
         sql = """
@@ -74,7 +103,7 @@ def insert_image_record(chemin_fichier, niveau_batterie=None, commentaire=None):
             new_id = cursor.lastrowid
             print(f"   → Base mise à jour (ID = {new_id})")
         except AttributeError:
-            print("   → Base mise à jour (ID non disponible)")
+            print("   → Base mise à jour")
 
         cursor.close()
         conn.close()
@@ -92,12 +121,10 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     if msg.topic == TOPIC_IMAGE:
-        # Génère un nom unique basé sur la date/heure
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"image_{timestamp}.jpg"
         filepath = os.path.join(SAVE_DIR, filename)
 
-        # Sauvegarder l’image reçue
         try:
             with open(filepath, "wb") as f:
                 f.write(msg.payload)
@@ -106,13 +133,11 @@ def on_message(client, userdata, msg):
             print("❌ ERREUR lors de l’écriture du fichier image :", e)
             return
 
-        # Chemin absolu pour la base
         full_path = os.path.abspath(filepath)
 
-        # Mise à jour DB
         insert_image_record(
             chemin_fichier=full_path,
-            niveau_batterie=None,   # tu mettras une vraie valeur plus tard si tu veux
+            niveau_batterie=None,
             commentaire="Image auto"
         )
 
@@ -120,12 +145,21 @@ def on_message(client, userdata, msg):
         print(f"Message sur {msg.topic}: {msg.payload[:30]}...")
 
 # -----------------------------
-# LANCEMENT MQTT
+# LANCEMENT PRINCIPAL
 # -----------------------------
-client = mqtt.Client()
-client.on_connect = on_connect
-client.on_message = on_message
+if __name__ == "__main__":
+    
+    # 1. D'abord on nettoie la BDD (Sync)
+    sync_database_with_folder()
 
-print("Connexion au broker MQTT...")
-client.connect(BROKER_IP, BROKER_PORT, keepalive=60)
-client.loop_forever()
+    # 2. Ensuite on lance MQTT
+    client = mqtt.Client()
+    client.on_connect = on_connect
+    client.on_message = on_message
+
+    print("Connexion au broker MQTT...")
+    try:
+        client.connect(BROKER_IP, BROKER_PORT, keepalive=60)
+        client.loop_forever()
+    except Exception as e:
+        print(f"❌ Impossible de se connecter au broker MQTT ({BROKER_IP}) : {e}")
