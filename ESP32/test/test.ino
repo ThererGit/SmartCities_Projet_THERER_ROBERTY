@@ -189,6 +189,11 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  // preferences.begin("wifi", false); // false = mode lecture/écriture
+  // preferences.clear();              // BOUM ! On efface tout le dossier "wifi"
+  // preferences.end();
+  // Serial.println("Mémoire effacée !");
+
   // Init Caméra
   if (!Camera.begin(FRAMESIZE_SVGA, PIXFORMAT_JPEG, 1, 12)) {
     Serial.println("Erreur Camera!");
