@@ -9,9 +9,16 @@ import paho.mqtt.client as mqtt
 # -----------------------------
 # CONFIG MQTT
 # -----------------------------
-BROKER_IP   = "192.168.0.101"
+BROKER_IP   = "192.168.1.15"
 BROKER_PORT = 1883
 TOPIC_IMAGE = "nichoir/image"
+TOPIC_BAT   = "nichoir/batterie"  # <--- NOUVEAU
+
+# -----------------------------
+# VARIABLE GLOBALE
+# -----------------------------
+# On stocke ici la dernière valeur de batterie reçue
+derniere_batterie = None 
 
 # -----------------------------
 # CONFIG DOSSIER IMAGES
@@ -35,79 +42,48 @@ DB_CONFIG = {
 # FONCTION DE NETTOYAGE (SYNC)
 # -----------------------------
 def sync_database_with_folder():
-    """
-    Vérifie au démarrage si les fichiers en base existent vraiment sur le disque.
-    Si un fichier a été supprimé manuellement, on le retire de la base.
-    """
     print("--- 🧹 Vérification de l'intégrité de la base de données ---")
     try:
         conn = mariadb.connect(**DB_CONFIG)
         cursor = conn.cursor()
-
-        # 1. On récupère toutes les entrées
         cursor.execute("SELECT id, chemin_fichier FROM images")
         rows = cursor.fetchall()
-        
         deleted_count = 0
 
-        # 2. On boucle sur chaque ligne pour vérifier le fichier
         for row in rows:
             image_id = row[0]
             chemin = row[1]
-
             if not os.path.exists(chemin):
-                # Le fichier n'existe plus sur le disque !
                 print(f"   ⚠️ Fichier introuvable : {chemin}")
-                print(f"      -> Suppression de l'entrée ID {image_id}...")
-                
-                # Suppression dans la BDD
                 cursor.execute("DELETE FROM images WHERE id = ?", (image_id,))
                 deleted_count += 1
         
-        # 3. On valide les suppressions
         if deleted_count > 0:
             conn.commit()
-            print(f"✅ Nettoyage terminé : {deleted_count} images supprimées de la base.")
+            print(f"✅ Nettoyage terminé : {deleted_count} images supprimées.")
         else:
-            print("✅ Tout est en ordre : La base correspond aux fichiers.")
+            print("✅ Tout est en ordre.")
 
         cursor.close()
         conn.close()
-
     except mariadb.Error as e:
-        print("❌ ERREUR lors de la synchronisation BDD :", e)
+        print("❌ ERREUR BDD :", e)
     print("----------------------------------------------------------")
 
-
 def insert_image_record(chemin_fichier, niveau_batterie=None, commentaire=None):
-    """ Insère une nouvelle ligne dans la table 'images'. """
     try:
         conn = mariadb.connect(**DB_CONFIG)
         cursor = conn.cursor()
-
         sql = """
             INSERT INTO images (chemin_fichier, date_capture, niveau_batterie, commentaire)
             VALUES (?, ?, ?, ?)
         """
-        valeurs = (
-            chemin_fichier,
-            datetime.now(),
-            niveau_batterie,
-            commentaire
-        )
-
+        valeurs = (chemin_fichier, datetime.now(), niveau_batterie, commentaire)
         cursor.execute(sql, valeurs)
         conn.commit()
-
-        try:
-            new_id = cursor.lastrowid
-            print(f"   → Base mise à jour (ID = {new_id})")
-        except AttributeError:
-            print("   → Base mise à jour")
-
+        print(f"   → Base mise à jour (ID = {cursor.lastrowid}, Batt = {niveau_batterie}V)")
         cursor.close()
         conn.close()
-
     except mariadb.Error as e:
         print("❌ ERREUR MariaDB :", e)
 
@@ -115,12 +91,24 @@ def insert_image_record(chemin_fichier, niveau_batterie=None, commentaire=None):
 # CALLBACKS MQTT
 # -----------------------------
 def on_connect(client, userdata, flags, rc):
-    print("Connecté au broker avec le code de retour", rc)
-    client.subscribe(TOPIC_IMAGE)
-    print(f"Abonné au topic : {TOPIC_IMAGE}")
+    print("Connecté au broker avec le code", rc)
+    client.subscribe([(TOPIC_IMAGE, 0), (TOPIC_BAT, 0)]) # <--- Abonnement aux 2 topics
+    print(f"Abonné à : {TOPIC_IMAGE} et {TOPIC_BAT}")
 
 def on_message(client, userdata, msg):
-    if msg.topic == TOPIC_IMAGE:
+    global derniere_batterie # On utilise la variable globale
+
+    # 1. SI C'EST UN MESSAGE DE BATTERIE
+    if msg.topic == TOPIC_BAT:
+        try:
+            payload_str = msg.payload.decode("utf-8")
+            derniere_batterie = float(payload_str)
+            print(f"🔋 Batterie reçue : {derniere_batterie} V")
+        except Exception as e:
+            print(f"❌ Erreur lecture batterie : {e}")
+
+    # 2. SI C'EST UNE IMAGE
+    elif msg.topic == TOPIC_IMAGE:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"image_{timestamp}.jpg"
         filepath = os.path.join(SAVE_DIR, filename)
@@ -129,30 +117,24 @@ def on_message(client, userdata, msg):
             with open(filepath, "wb") as f:
                 f.write(msg.payload)
             print(f"[{timestamp}] Image reçue → {filepath}")
+            
+            # On insère en base avec la dernière valeur de batterie connue
+            full_path = os.path.abspath(filepath)
+            insert_image_record(
+                chemin_fichier=full_path,
+                niveau_batterie=derniere_batterie, # <--- Utilisation ici
+                commentaire="Image auto"
+            )
+            
         except Exception as e:
-            print("❌ ERREUR lors de l’écriture du fichier image :", e)
-            return
-
-        full_path = os.path.abspath(filepath)
-
-        insert_image_record(
-            chemin_fichier=full_path,
-            niveau_batterie=None,
-            commentaire="Image auto"
-        )
-
-    else:
-        print(f"Message sur {msg.topic}: {msg.payload[:30]}...")
+            print("❌ ERREUR écriture fichier :", e)
 
 # -----------------------------
 # LANCEMENT PRINCIPAL
 # -----------------------------
 if __name__ == "__main__":
-    
-    # 1. D'abord on nettoie la BDD (Sync)
     sync_database_with_folder()
-
-    # 2. Ensuite on lance MQTT
+    
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
@@ -162,4 +144,4 @@ if __name__ == "__main__":
         client.connect(BROKER_IP, BROKER_PORT, keepalive=60)
         client.loop_forever()
     except Exception as e:
-        print(f"❌ Impossible de se connecter au broker MQTT ({BROKER_IP}) : {e}")
+        print(f"❌ Impossible de se connecter : {e}")
