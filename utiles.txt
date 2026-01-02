@@ -33,10 +33,10 @@ MariaDB [nichoir]> describe images
 | id              | int(11)      | NO   | PRI | NULL    | auto_increment |
 | chemin_fichier  | varchar(255) | NO   |     | NULL    |                |
 | date_capture    | datetime     | NO   |     | NULL    |                |
-| niveau_batterie | tinyint(4)   | YES  |     | NULL    |                |
+| niveau_batterie | float   | YES  |     | NULL    |                |
 | commentaire     | varchar(255) | YES  |     | NULL    |                |
 +-----------------+--------------+------+-----+---------+----------------+
-5 rows in set (0.001 sec)
+
 
 
 
