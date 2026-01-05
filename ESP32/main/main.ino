@@ -8,6 +8,8 @@
 #include <driver/adc.h>
 #include "esp_sleep.h"
 #include "esp_bt.h"     // btStop()
+#include "driver/gpio.h"
+
 
 // ================= CONFIGURATION =================
 
@@ -23,7 +25,7 @@ const char* AP_PASSWORD   = "12345678";
 
 // --- SLEEP + PIR ---
 #define PIR_PIN 4                  // <-- GPIO RTC recommandé pour EXT0
-#define COOLDOWN_TIME_SEC 300      // 5 minutes (à adapter)
+#define COOLDOWN_TIME_SEC 60      // 5 minutes (à adapter)
 
 // Pins
 #define BAT_ADC_PIN   38
@@ -169,6 +171,7 @@ bool connectToSavedWiFi() {
 
 void startConfigAP() {
   Serial.println(">>> MODE AP CONFIGURATION <<<");
+  digitalWrite(LED_PIN, HIGH);
   WiFi.disconnect();
   delay(100);
   WiFi.mode(WIFI_AP);
@@ -281,6 +284,7 @@ Serial.println("[EVENT] Mouvement detecte (PIR)!");
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("[WIFI] Connecte ! IP: "); Serial.println(WiFi.localIP());
+    digitalWrite(LED_PIN, HIGH);
 
     Serial.print("[CAM] Initialisation camera...");
     bool camOK = Camera.begin(FRAMESIZE_SVGA, PIXFORMAT_JPEG, 1, 12);
@@ -337,9 +341,13 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
+  // --- Préparer le deep sleep / maintien alim sur batterie (M5TimerCAM) ---
   pinMode(BAT_HOLD_PIN, OUTPUT);
-  digitalWrite(BAT_HOLD_PIN, HIGH);
-  delay(50);
+  digitalWrite(BAT_HOLD_PIN, HIGH);                 // garde l'alim active
+  gpio_hold_en((gpio_num_t)BAT_HOLD_PIN);
+  gpio_deep_sleep_hold_en();
+
+  
 
   // Lire SSID/PASS
   preferences.begin("wifi", true);
@@ -363,7 +371,7 @@ void setup() {
 // ================= LOOP =================
 
 void loop() {
- // digitalWrite(LED_PIN, HIGH);
+ digitalWrite(LED_PIN, HIGH);
 
   if (isStationMode) {
     // Nouveau comportement: on attend PIR en light sleep,
